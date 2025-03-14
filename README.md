@@ -1,5 +1,6 @@
-
 # HUE2MQTT Help
+
+V0.1b - Beta test mode
 
 ## Overview
 HUE2MQTT is a proxy application that bridges communication between a Philips Hue bridge and MQTT message queues. It enables bidirectional data transfer, allowing you to:
@@ -25,6 +26,14 @@ ip = "10.0.0.2"
 username = "<from the hue configuraton>"
 id = "124af34gh34df784e"
 ```
+
+### Docker installation
+
+`docker pull kwame42/hue2mqtt:latest`
+
+Default running command: mix hue.mqtt.server
+
+try to load HUE_MQTT_CONFIG_FILE environment variable to read confgi file from. You can mount `/data` and load configuraiton there. You can also specify the io.XML output file in the same directory (see help section)
 
 ### Topic Structure
 - **From Hue to MQTT**: `hue2mqtt/[device_type]/[device_id]/`
@@ -57,15 +66,17 @@ You can create an io.xml file for Calaos using `mix discovery.calaos [options]` 
 
 ## Command Line Options
 ```
-Usage: mix hue.mqtt.server [options]
-       mix discovery.calaos [options]
+Usage: mix hue.mqtt.server [global options]
+       mix discovery.calaos [global options] [calaos options]
 
-Options:
+Global options:
  --hue-config: Hue Config file path
- --mqtt_config: MQTT Config file path
+ --mqtt_config: MQTT Config file path, can be set as a environment variable HUE_MQTT_CONFIG_FILE (see docker section)
  --toml_config: TOML config file with hue and mqtt configuration
+ --help: help message
+
+Calaos options:
  --io-output-file: Calaos IO output filename 
  --id-start: Calaos IO id starting number - default is 0
- --help: help message
 ```
 
