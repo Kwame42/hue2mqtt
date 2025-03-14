@@ -1,4 +1,5 @@
 defmodule Mqtt do
+  alias Mqtt
   @moduledoc """
   information on MQTT
   """
@@ -6,6 +7,17 @@ defmodule Mqtt do
   use GenServer
   use Log
   alias Hue.Api.Resource
+
+  defstruct do: [
+    base: "hue2mqtt",
+    bridge_id: "default",
+    module_name: "",
+    resource_id: "",
+    module: "",
+    method: :get,
+    valid?: true,
+    error: "",
+  ]
   
   def start_link(_) do
     GenServer.start_link(__MODULE__, [], name: Mqtt)
@@ -25,7 +37,10 @@ defmodule Mqtt do
   end
     
   def handle_info({:publish, %{topic: topic, payload: payload}}, opt) do
-    topic |> String.split("/") |> hue_bridge(payload)
+    topic
+    |> topic_to_hue()
+    |> hue_bridge(payload)
+    
     {:noreply, opt}
   end
 
@@ -46,18 +61,16 @@ defmodule Mqtt do
     {:reply, res, %{pid: pid}}
   end
   
-  def hue_bridge(["hue2mqtt", resource, id, "set"], payload) do
-    if resource in Resource.resources_list() do
-      module_name = Resource.resource_to_module_name(resource) 
-      info("Set HUE bridge ressource: [#{resource}/#{id}] (#{module_name}) with payload #{inspect payload}")
-      apply(:"Elixir.Hue.Api.#{module_name}", :put, [Hue.Conf.get_bridge(), id, payload])
-    else
-      warning("Mqtt HUE unknown resource [#{resource}]")
-    end
-  end
+  def hue_bridge(%Mqtt{} = hue, _payload) when not hue.valid?,
+    do: warning("Mqtt HUE error: #{hue.error}[#{hue.resource}]")
 
-  def hue_bridge(["hue2mqtt", resource, id], _json_payload) do
-    info("MQTT HUE info [#{resource}, #{id}]") 
+  def hue_bridge(%Mqtt{} = hue, payload) do
+    info("Set HUE bridge ressource: [#{hue.module_name}/#{hue.resource_id}] (#{hue.module_name}) with payload #{inspect payload}")
+    apply(:"Elixir.Hue.Api.#{hue.module_name}", hue.method, [Hue.Conf.get_bridge(hue.bridge), hue.id, payload])
+  end
+  
+  def hue_bridge(%Mqtt{} = hue, _payload) do
+    info("MQTT HUE info [#{hue.module_name}, #{hue.resource_id}]") 
   end
   
   def hue_bridge(data, _) do
@@ -102,4 +115,35 @@ defmodule Mqtt do
       Keyword.put(list, String.to_atom(key), val)
     end)
   end
+
+  def topic_to_hue(topic) do
+    case String.split(topic, "/") do
+      ["hue2mqtt", resource, resource_id] -> new_hue(%{bridge_id: "default", module: resource, resource_id: resource_id})
+      ["hue2mqtt", resource, resource_id, "set"] -> new_hue(%{bridge_id: "default", module: resource, method: :put, resource_id: resource_id})
+      ["hue2mqtt", bridge_id, resource, resource_id] -> new_hue(%{bridge_id: bridge_id, module: resource, resource_id: resource_id})
+      ["hue2mqtt", bridge_id, resource, resource_id, "set"] -> new_hue(%{bridge_id: bridge_id, module: resource, method: :put, resource_id: resource_id})
+    end
+  end
+
+  def new_hue(attrs, error) do
+    if attrs.resource in Resource.resources_list do
+      %Mqtt{
+	bridge_id: attrs.bridge_id, 
+	module: Resource.resource_to_module_name(attrs.resource),
+	method: attrs.method,
+	resource_id: attrs.resource_id
+      }
+    else
+      error_hue("unkown ressource")
+    end
+  end
+
+   def error_hue(%Mqtt{} = hue, error) do
+     hue
+     |> Map.put(:error, error)
+     |> Map.put(valid?: false)
+   end
+   
+   def error_hue(error),
+     do: error_hue(%Mqtt{}, error)
 end
