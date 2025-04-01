@@ -47,12 +47,16 @@ defmodule Mqtt do
   end
   
   def hue_bridge(["hue2mqtt", resource, id, "set"], payload) do
-    if resource in Resource.resources_list() do
+    IO.inspect(Jason.decode(payload), label: "PAYLOAD")
+    with resource in Resource.resources_list(),
+	 {:ok, encoded_payload} <- Jason.decode(payload) do
       module_name = Resource.resource_to_module_name(resource) 
       info("Set HUE bridge ressource: [#{resource}/#{id}] (#{module_name}) with payload #{inspect payload}")
-      apply(:"Elixir.Hue.Api.#{module_name}", :put, [Hue.Conf.get_bridge(), id, payload])
+      apply(:"Elixir.Hue.Api.#{module_name}", :put, [Hue.Conf.get_bridge(), id, encoded_payload])
+      |> info()
     else
-      warning("Mqtt HUE unknown resource [#{resource}]")
+      :error -> error("Payload: #{inspect(payload)} invalid, must be JSON type")
+      false -> error("Unkown resource #{resource}")
     end
   end
 
