@@ -11,6 +11,8 @@ defmodule Hue.Conf do
     discovery_url: @discovery_url,
 #    valid?: false
   ]
+
+  defguard is_non_nul_string(string) when is_bitstring(string) and string != ""
   
   def start_link(_default),
     do: GenServer.start_link(__MODULE__, %{}, name: Hue.Conf)
@@ -54,6 +56,7 @@ defmodule Hue.Conf do
 	info("Try to load conf in autodiscoery")
 	{:ok, %Hue.Conf{bridges_list: maybe_auto_discover_briges_list()}}
     end
+    |> validate_configuration()
   end
 
   @impl true
@@ -72,10 +75,13 @@ defmodule Hue.Conf do
   def maybe_auto_discover_briges_list do
     with auto_discovery when auto_discovery != false <- :hue_mqtt |> Application.fetch_env!(:api) |> Keyword.get(:auto_discovery),
 	 api when api.success? == true and is_list(api.response) <- Hue.Api.get_from_url(@discovery_url) do
-      Hue.Conf.Bridge.to_bridge_struct(api.reponse)
+      Hue.Conf.Bridge.to_bridge_struct(api.response)
     else
       _ -> []
     end
+    |> Enum.reduce(%{}, fn bridge, acc ->
+      Map.put(acc, bridge.id, bridge)
+    end)
   end
 
   def write_conf(config_file) do
@@ -178,4 +184,26 @@ defmodule Hue.Conf do
     |> IO.puts()
     System.halt(0)
   end
+
+  defp configuration_error do
+    error("Configuration is invalid, check existance of bridge username, or configuraiton file")
+    help_and_exit()
+  end
+
+  defp validate_configuration({:ok, %Hue.Conf{} = configuration}) do
+    with {:ok, bridges_list} when is_map(bridges_list) <- Map.fetch(configuration, :bridges_list) do
+      bridges_list
+      |> Enum.map(fn
+	{_, %Hue.Conf.Bridge{} = bridge} when is_non_nul_string(bridge.username) -> :ok
+	_ -> configuration_error()
+      end)
+    else
+      _ -> configuration_error()
+    end
+
+    {:ok, configuration}
+  end
+
+  defp validate_configuration(_),
+    do: configuration_error()
 end
