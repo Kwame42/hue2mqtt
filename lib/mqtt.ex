@@ -1,5 +1,4 @@
 defmodule Mqtt do
-  alias Mqtt
   @moduledoc """
   information on MQTT
   """
@@ -8,15 +7,15 @@ defmodule Mqtt do
   use Log
   alias Hue.Api.Resource
 
-  defstruct do: [
+  defstruct [
     base: "hue2mqtt",
-    bridge_id: "default",
-    module_name: "",
+    bridge_id: :default,
+    bridge: "",
     resource_id: "",
     module: "",
-    method: :get,
-    valid?: true,
-    error: "",
+    method: "get",
+    error: [],
+    valid?: true
   ]
   
   def start_link(_) do
@@ -61,33 +60,24 @@ defmodule Mqtt do
     {:reply, res, %{pid: pid}}
   end
   
-  def hue_bridge(%Mqtt{} = hue, _payload) when not hue.valid?,
-    do: warning("Mqtt HUE error: #{hue.error}[#{hue.resource}]")
+  defp hue_bridge(%Mqtt{} = hue, _payload) when hue.valid? == false,
+    do: error("Mqtt HUE error [#{hue.bridge_id}, #{hue.module}, #{hue.method}]: #{hue.error |> Enum.intersperse("\n") |> List.to_string()}")
 
-  def hue_bridge(["hue2mqtt", resource, id, "set"], payload) do
-    IO.inspect(Jason.decode(payload), label: "PAYLOAD")
-    with resource in Resource.resources_list(),
-	 {:ok, encoded_payload} <- Jason.decode(payload) do
-      module_name = Resource.resource_to_module_name(resource) 
-      info("Set HUE bridge ressource: [#{resource}/#{id}] (#{module_name}) with payload #{inspect payload}")
-      apply(:"Elixir.Hue.Api.#{module_name}", :put, [Hue.Conf.get_bridge(), id, encoded_payload])
+  defp hue_bridge(%Mqtt{method: :put} = hue, payload) do
+    with {:ok, encoded_payload} <- Jason.decode(payload) do
+      info("Set HUE bridge ressource: [#{hue.bridge.ip}/#{hue.module}/#{hue.resource_id}] (#{hue.module}) with payload #{inspect payload}")
+      apply(:"Elixir.Hue.Api.#{hue.module}", :put, [hue.bridge, hue.resource_id, encoded_payload])
       |> info()
     else
-      :error -> error("Payload: #{inspect(payload)} invalid, must be JSON type")
-      false -> error("Unkown resource #{resource}")
+      _ -> error("Payload: #{inspect(payload)} invalid, must be JSON type")
     end
   end
 
-  def hue_bridge(%Mqtt{} = hue, payload) do
-    info("Set HUE bridge ressource: [#{hue.module_name}/#{hue.resource_id}] (#{hue.module_name}) with payload #{inspect payload}")
-    apply(:"Elixir.Hue.Api.#{hue.module_name}", hue.method, [Hue.Conf.get_bridge(hue.bridge), hue.id, payload])
+  defp hue_bridge(%Mqtt{} = hue, _payload) do
+    info("MQTT HUE info [#{hue.module}, #{hue.resource_id}]") 
   end
   
-  def hue_bridge(%Mqtt{} = hue, _payload) do
-    info("MQTT HUE info [#{hue.module_name}, #{hue.resource_id}]") 
-  end
-  
-  def hue_bridge(data, _) do
+  defp hue_bridge(data, _) do
     info("I don't handle this... #{inspect(data)}")
   end
 
@@ -130,34 +120,61 @@ defmodule Mqtt do
     end)
   end
 
+  @methods_list ["get", "put"]
   def topic_to_hue(topic) do
     case String.split(topic, "/") do
-      ["hue2mqtt", resource, resource_id] -> new_hue(%{bridge_id: "default", module: resource, resource_id: resource_id})
-      ["hue2mqtt", resource, resource_id, "set"] -> new_hue(%{bridge_id: "default", module: resource, method: :put, resource_id: resource_id})
-      ["hue2mqtt", bridge_id, resource, resource_id] -> new_hue(%{bridge_id: bridge_id, module: resource, resource_id: resource_id})
-      ["hue2mqtt", bridge_id, resource, resource_id, "set"] -> new_hue(%{bridge_id: bridge_id, module: resource, method: :put, resource_id: resource_id})
+      ["hue2mqtt", resource, resource_id] -> cast_to_hue_struct(%{bridge_id: :default, resource: resource, resource_id: resource_id})
+      ["hue2mqtt", resource, resource_id, method] when method in @methods_list-> cast_to_hue_struct(%{bridge_id: :default, resource: resource, method: method, resource_id: resource_id})
+      ["hue2mqtt", bridge_id, resource, resource_id] -> cast_to_hue_struct(%{bridge_id: bridge_id, resource: resource, resource_id: resource_id})
+      ["hue2mqtt", bridge_id, resource, resource_id, method] when method in @methods_list -> cast_to_hue_struct(%{bridge_id: bridge_id, resource: resource, method: method, resource_id: resource_id})
+      _ -> info("get topic #{topic}")
+    end
+  end
+  
+  defp cast_to_hue_struct(attrs) do
+    %Mqtt{}
+    |> maybe_add_method(attrs)
+    |> maybe_add_resource(attrs)
+    |> maybe_add_bridge(attrs)
+  end
+
+  defp maybe_add_method(hue_struct, attrs) do
+    case Map.fetch(attrs, :method) do
+      {:ok, method} when method in @methods_list -> Map.put(hue_struct, :method, maybe_to_atom(method))
+      {:ok, method} -> add_error_to_hue_struct(hue_struct, "unknown method #{method}")
+      :error -> Map.put(hue_struct, :method, :get)
+    end
+  end
+  
+  defp maybe_add_bridge(hue_struct, attrs) when attrs.bridge_id == :default,
+    do:  Map.put(hue_struct, :bridge, Hue.Conf.get_bridge())
+  
+  defp maybe_add_bridge(hue_struct, attrs) do
+    case Hue.Conf.get_bridge(attrs.bridge_id) do
+      nil -> add_error_to_hue_struct(hue_struct, "Can't find bridge in configuration")
+      bridge -> Map.put(hue_struct, :bridge, bridge)
     end
   end
 
-  def new_hue(attrs, error) do
-    if attrs.resource in Resource.resources_list do
-      %Mqtt{
-	bridge_id: attrs.bridge_id, 
-	module: Resource.resource_to_module_name(attrs.resource),
-	method: attrs.method,
-	resource_id: attrs.resource_id
-      }
+  defp maybe_add_resource(hue_struct, attrs) do
+    if attrs.resource in Resource.resources_list() do
+      hue_struct
+      |> Map.put(:module, Resource.resource_to_module_name(attrs.resource))
+      |> Map.put(:resource_id, attrs.resource_id)
     else
-      error_hue("unkown ressource")
+      hue_struct
+      |> Map.put(:module, attrs.resource)
+      |> add_error_to_hue_struct("Unkown resource, check API documentation for available resource list")
     end
   end
 
-   def error_hue(%Mqtt{} = hue, error) do
-     hue
-     |> Map.put(:error, error)
-     |> Map.put(valid?: false)
-   end
-   
-   def error_hue(error),
-     do: error_hue(%Mqtt{}, error)
+  def add_error_to_hue_struct(%Mqtt{} = hue, error) do
+    hue
+    |> Map.put(:error, [error | hue.error])
+    |> Map.put(:valid?, false)
+  end
+  
+  defp maybe_to_atom(data) when is_atom(data), do: data
+  defp maybe_to_atom(data) when is_bitstring(data), do: String.to_atom(data)
+  defp maybe_to_atom(data), do: raise "Unknown type for #{inspect(data)}"
 end

@@ -9,7 +9,7 @@ defmodule HueMqtt.Application do
   def start(_type, _args) do
     children = [
 #      PubSub,
-#      Mqtt,
+      Mqtt,
       # Starts a worker by calling: HueMqtt.Worker.start_link(arg)
       # {HueMqtt.Worker, arg}
       ## WATCHOUT for dependensies betwee Hue.Api and Hue.Conf (
