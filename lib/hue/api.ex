@@ -200,8 +200,10 @@ defmodule Hue.Api do
   def method_data(method, bridge, path, data, headers, options) when is_bitstring(method),
     do: method_data(String.to_atom(method), bridge, path, data, headers, options)
     
-  def method_data(method, bridge, path, data, headers, options) when method in [:put, :post, :delete],
-    do: call(method, Bridge.url(bridge, path), Bridge.headers(bridge, headers), data, options)
+  def method_data(method, bridge, path, data, headers, options) when method in [:put, :post, :delete] do
+    IO.inspect("Calling method #{method} on #{Bridge.url(bridge, path)} with data: #{inspect(data)}")
+    call(method, Bridge.url(bridge, path), Bridge.headers(bridge, headers), data, options)
+  end
   
   def method_data!(method, bridge, path, data, headers \\ [], options \\ [])
   

@@ -63,7 +63,7 @@ defmodule Mqtt do
   defp hue_bridge(%Mqtt{} = hue, _payload) when hue.valid? == false,
     do: error("Mqtt HUE error [#{hue.bridge_id}, #{hue.module}, #{hue.method}]: #{hue.error |> Enum.intersperse("\n") |> List.to_string()}")
 
-  defp hue_bridge(%Mqtt{method: :put} = hue, payload) do
+  defp hue_bridge(%Mqtt{method: :set} = hue, payload) do
     with {:ok, encoded_payload} <- Jason.decode(payload) do
       info("Set HUE bridge ressource: [#{hue.bridge.ip}/#{hue.module}/#{hue.resource_id}] (#{hue.module}) with payload #{inspect payload}")
       apply(:"Elixir.Hue.Api.#{hue.module}", :put, [hue.bridge, hue.resource_id, encoded_payload])
@@ -120,7 +120,7 @@ defmodule Mqtt do
     end)
   end
 
-  @methods_list ["get", "put"]
+  @methods_list ["get", "set"]
   def topic_to_hue(topic) do
     case String.split(topic, "/") do
       ["hue2mqtt", resource, resource_id] -> cast_to_hue_struct(%{bridge_id: :default, resource: resource, resource_id: resource_id})

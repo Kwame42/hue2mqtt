@@ -6,5 +6,4 @@ WORKDIR /app/hue_mqtt
 RUN mix deps.get
 RUN mix compile
 VOLUME ["/data"]
-CMD [mix, hue.mqtt.server]
-
+CMD ["mix", "hue.mqtt.server"]

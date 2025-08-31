@@ -60,7 +60,6 @@ end
 
 Module.create(Hue.Api.Resource, [resources_list_func, resource_to_module_name], Macro.Env.location(__ENV__))
 
-
 for resource <- resources_list do
   key =
     resource
