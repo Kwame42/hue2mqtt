@@ -1,4 +1,10 @@
-# HUE2MQTT Help
+# HUE2MQTT
+
+[![Hex.pm](https://img.shields.io/hexpm/v/hue_mqtt.svg)](https://hex.pm/packages/hue_mqtt)
+[![Documentation](https://img.shields.io/badge/docs-hexdocs-blue.svg)](https://hexdocs.pm/hue_mqtt)
+[![Docker](https://img.shields.io/docker/pulls/kwame42/hue2mqtt.svg)](https://hub.docker.com/r/kwame42/hue2mqtt)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub stars](https://img.shields.io/github/stars/Kwame42/hue2mqtt.svg)](https://github.com/Kwame42/hue2mqtt/stargazers)
 
 V0.1b - Beta test mode
 
@@ -7,23 +13,54 @@ HUE2MQTT is a proxy application that bridges communication between a Philips Hue
 - Forward messages from your Hue bridge to MQTT topics
 - Send commands from MQTT to your Hue bridge
 
+## Installation
+
+### From Hex.pm
+
+Add `hue_mqtt` to your list of dependencies in `mix.exs`:
+
+```elixir
+def deps do
+  [
+    {:hue_mqtt, "~> 0.1.0"}
+  ]
+end
+```
+
+Then run:
+```bash
+mix deps.get
+```
+
+### From Source
+
+```bash
+git clone https://github.com/Kwame42/hue2mqtt.git
+cd hue2mqtt
+mix deps.get
+mix compile
+```
+
 ## Configuration
 
 ### Connection Settings
-```
+
+**MQTT Configuration (using Tortoise client):**
+```toml
 [mqtt]
 host = "10.0.0.1"
 port = 1883
-enable_tls = false
-force_protocol_version_3_1 = true
-enable_auth = false
+client_id = "hue2mqtt"
 username = ""
 password = ""
-topic_prefix = "hue2mqtt"
+keep_alive = 60
+```
 
+**Hue Bridge Configuration:**
+```toml
 [hue]
 ip = "10.0.0.2"
-username = "<from the hue configuraton>"
+username = "<from the hue configuration>"
 id = "124af34gh34df784e"
 ```
 
@@ -79,4 +116,38 @@ Calaos options:
  --io-output-file: Calaos IO output filename 
  --id-start: Calaos IO id starting number - default is 0
 ```
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+- 📚 [Documentation](https://hexdocs.pm/hue_mqtt)
+- 🐛 [Issue Tracker](https://github.com/Kwame42/hue2mqtt/issues)
+- 💬 [Discussions](https://github.com/Kwame42/hue2mqtt/discussions)
+- 🐳 [Docker Hub](https://hub.docker.com/r/kwame42/hue2mqtt)
+
+## Links
+
+- [Philips Hue API Documentation](https://developers.meethue.com/develop/hue-api-v2/)
+- [MQTT Protocol](https://mqtt.org/)
+- [Calaos Home Automation](https://calaos.fr/)
+- [Elixir Language](https://elixir-lang.org/)
+
+## Acknowledgments
+
+- Thanks to the Philips Hue team for their excellent API
+- Thanks to the EMQX team for the MQTT client library
+- Thanks to the Elixir community for the amazing ecosystem
 

@@ -38,3 +38,23 @@ npm-debug.log
 *.1
 .DS_Store
 .elixir-version
+
+# Hex package
+*.tar
+
+# Documentation
+/doc/
+
+# Test coverage
+/cover/
+/coverage/
+
+# Dialyzer PLTs
+/priv/plts/
+
+# Editor files
+.vscode/
+.idea/
+
+# OS files
+Thumbs.db

@@ -1,4 +1,15 @@
 defmodule Hue.Conf.Bridge do
+  @moduledoc """
+  Bridge configuration struct and utility functions for Hue bridge management.
+  
+  This module defines the Bridge struct used to store Hue bridge connection
+  parameters and provides functions for:
+  - Converting various input formats to Bridge structs
+  - Building URLs and headers for HTTP requests
+  - Managing bridge authentication credentials
+  - Handling multiple bridge configurations
+  """
+  
   alias Hue.Conf.Bridge
   
   @derive {Jason.Encoder, only: [:id, :ip, :port, :username, :password, :status]}
@@ -12,6 +23,18 @@ defmodule Hue.Conf.Bridge do
     status: ""
   ]
 
+  @doc """
+  Converts various input formats to a Bridge struct.
+  
+  ## Parameters
+  
+  - `attrs` - Map with bridge attributes including :id (required)
+  
+  ## Returns
+  
+  %Bridge{} struct with populated fields.
+  """
+  @spec to_bridge_struct(map()) :: %Bridge{}
   def to_bridge_struct(%{id: _id} = attrs) do
     %Bridge{
       id: map_get(attrs, :id),
@@ -23,6 +46,18 @@ defmodule Hue.Conf.Bridge do
     }
   end
 
+  @doc """
+  Converts a list of bridge attribute maps to Bridge structs.
+  
+  ## Parameters
+  
+  - `list` - List of maps containing bridge attributes
+  
+  ## Returns
+  
+  List of %Bridge{} structs.
+  """
+  @spec to_bridge_struct([map()]) :: [%Bridge{}]
   def to_bridge_struct(list) when is_list(list) do
     list
     |> maybe_to_map_keys()
@@ -38,6 +73,18 @@ defmodule Hue.Conf.Bridge do
     |> to_bridge_struct()
   end
 
+  @doc """
+  Converts bridge attribute maps to a keyed collection of Bridge structs.
+  
+  ## Parameters
+  
+  - `attrs` - List or map of bridge attributes
+  
+  ## Returns
+  
+  Map of bridge_id => %Bridge{} struct.
+  """
+  @spec to_hue_struct([map()] | map()) :: %{any() => %Bridge{}}
   def to_hue_struct(attrs) do
     attrs
     |> maybe_to_map_keys()
@@ -49,6 +96,19 @@ defmodule Hue.Conf.Bridge do
     end)
   end
 
+  @doc """
+  Builds a complete URL for the bridge API endpoint.
+  
+  ## Parameters
+  
+  - `bridge` - Bridge struct with IP and port
+  - `path` - API path to append (optional)
+  
+  ## Returns
+  
+  Complete HTTPS URL string for the bridge endpoint.
+  """
+  @spec url(%Bridge{}, String.t()) :: String.t()
   def url(%Bridge{} = bridge, path \\ "") do
     ~s"""
     https://#{bridge.ip}:#{bridge.port}/#{String.trim_leading(path, "/")}
@@ -56,6 +116,19 @@ defmodule Hue.Conf.Bridge do
     |> String.trim()
   end
 
+  @doc """
+  Builds HTTP headers for bridge API requests including authentication.
+  
+  ## Parameters
+  
+  - `bridge` - Bridge struct with username for auth
+  - `headers` - Additional headers to include (optional)
+  
+  ## Returns
+  
+  List of HTTP header tuples with authentication header added.
+  """
+  @spec headers(%Bridge{}, list()) :: list()
   def headers(bridge, headers \\ []) when not is_nil(bridge.username),
     do: [{"hue-application-key", bridge.username} | headers]
   

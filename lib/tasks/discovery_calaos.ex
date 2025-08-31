@@ -1,4 +1,31 @@
 defmodule Mix.Tasks.Discovery.Calaos do
+  @moduledoc """
+  Mix task for discovering Hue devices and generating Calaos configuration.
+  
+  This task connects to configured Hue bridges, discovers available devices,
+  and generates Calaos home automation system configuration files (io.xml).
+  
+  It supports discovery of:
+  - Lights and grouped lights
+  - Rooms and zones  
+  - Sensors and other supported devices
+  
+  ## Usage
+  
+      mix discovery.calaos [global_options] [calaos_options]
+  
+  ## Global Options
+  
+  - `--hue-config` - Hue configuration file path
+  - `--mqtt-config` - MQTT configuration file path  
+  - `--toml-config` - Combined TOML configuration file
+  
+  ## Calaos Options
+  
+  - `--io-output-file` - Output filename for Calaos IO configuration
+  - `--id-start` - Starting ID number for Calaos devices (default: 0)
+  """
+  
   alias Mix.Tasks.Discovery.Calaos
   alias Hue.Conf
 
@@ -16,6 +43,14 @@ defmodule Mix.Tasks.Discovery.Calaos do
     :type,
   ]
   
+  @doc """
+  Runs the Calaos discovery task.
+  
+  ## Parameters
+  
+  - `args` - Command-line arguments for configuration
+  """
+  @spec run([String.t()]) :: :ok
   def run(args) do
     Application.ensure_all_started(:httpoison)
     options = Conf.application_load_config_in_env(args)

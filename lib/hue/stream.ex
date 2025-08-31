@@ -7,12 +7,25 @@ defmodule Hue.Stream do
   use Log
   require Logger
 
+  @doc """
+  Starts the Hue Stream GenServer that manages EventStream connections to Hue bridges.
+  """
+  @spec start_link(any()) :: GenServer.on_start()
   def start_link(_default),
     do: GenServer.start_link(__MODULE__, %{}, name: Hue.Stream)
 
   @doc """
   
   """
+  @doc """
+  Initializes the Stream GenServer by establishing async HTTP connections 
+  to all configured Hue bridges for real-time event streaming.
+  
+  ## Returns
+  
+  {:ok, connections} where connections is a map of reference_id => bridge_struct
+  """
+  @spec init(any()) :: {:ok, map()}
   def init(_default) do
     connexions =
       Hue.Conf.get_conf
@@ -95,6 +108,18 @@ defmodule Hue.Stream do
     |> HTTPoison.get!(Hue.Conf.Bridge.headers(bridge), options)
   end
 
+  @doc """
+  Converts a reference to a string representation for use as map keys.
+  
+  ## Parameters
+  
+  - `ref` - HTTP request reference
+  
+  ## Returns
+  
+  String representation of the reference.
+  """
+  @spec ref_to_string(reference()) :: String.t()
   def ref_to_string(ref),
     do: inspect(ref)
 end
