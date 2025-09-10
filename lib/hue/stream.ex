@@ -98,7 +98,20 @@ defmodule Hue.Stream do
   
   defp async_connection(bridge) do
     info("Connecting to bridge #{Hue.Conf.Bridge.url(bridge)}")
-    options = [{:ssl, [{:verify, :verify_none}]}, recv_timeout: :infinity, stream_to: self(), hackney: [pool: :default]]
+    options = [
+      {:ssl, [
+        {:verify, :verify_none},
+        {:check_hostname, false},
+        {:versions, [:"tlsv1.2", :"tlsv1.3"]},
+        {:ciphers, :ssl.cipher_suites(:default, :"tlsv1.2") ++ :ssl.cipher_suites(:default, :"tlsv1.3")},
+        {:secure_renegotiate, true},
+        {:reuse_sessions, true},
+        {:honor_cipher_order, false}
+      ]},
+      recv_timeout: :infinity,
+      stream_to: self(),
+      hackney: [pool: :default]
+    ]
     # maybe check for already existing connection
     bridge
     |> Hue.Conf.Bridge.url("/eventstream/clip/v2")
