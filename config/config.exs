@@ -12,8 +12,6 @@ config :httpoison,
   timeout: 30_000,
   recv_timeout: 30_000
 
-config :hackney, ssl_options: [verify: :verify_none]
-
 config_file = System.get_env("HUE_MQTT_CONFIG_FILE")
 if config_file do
   config :hue_mqtt, :config_file, config_file

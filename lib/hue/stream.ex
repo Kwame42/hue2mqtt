@@ -101,7 +101,11 @@ defmodule Hue.Stream do
     options = [
       recv_timeout: :infinity,
       stream_to: self(),
-      hackney: [ssl_options: [{:cacertfile, CAStore.file_path()}, {:verify, :verify_none}]]
+      ssl: [
+	versions: [:"tlsv1.2"],
+	hackney: [:insecure],
+	verify: :verify_none
+      ]
     ]
 
     # maybe check for already existing connection

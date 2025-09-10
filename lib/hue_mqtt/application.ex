@@ -44,9 +44,9 @@ defmodule HueMqtt.Application do
       # Starts a worker by calling: HueMqtt.Worker.start_link(arg)
       # {HueMqtt.Worker, arg}
       ## WATCHOUT for dependensies betwee Hue.Api and Hue.Conf (
-      Hue.Api,    # 1. Must be, before Hue.conf
-      Hue.Conf,   # 2.
-      Hue.Stream, # 3. 
+#      Hue.Api,    # 1. Must be, before Hue.conf
+#      Hue.Conf,   # 2.
+#      Hue.Stream, # 3. 
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
