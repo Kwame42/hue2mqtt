@@ -1,4 +1,4 @@
-FROM elixir
+FROM elixir:1.18.4
 RUN mkdir /app
 WORKDIR /app
 COPY . hue_mqtt
