@@ -340,21 +340,11 @@ defmodule Hue.Api do
   end
   
   defp http_options do
-    ssl_opts = [
-      {:verify, :verify_none},
-      {:check_hostname, false},
-      {:versions, [:"tlsv1.2", :"tlsv1.3"]},
-      {:ciphers, :ssl.cipher_suites(:default, :"tlsv1.2") ++ :ssl.cipher_suites(:default, :"tlsv1.3")},
-      {:secure_renegotiate, true},
-      {:reuse_sessions, true},
-      {:honor_cipher_order, false},
-      {:log_level, :debug}  # Add SSL debug logging
-    ]
-    
-    Logger.debug("HTTP SSL options: #{inspect(ssl_opts)}")
-    
     [
-      {:ssl, ssl_opts},
+      {:ssl, [
+        {:verify, :verify_none},
+        {:versions, [:"tlsv1.2", :"tlsv1.3"]}
+      ]},
       {:timeout, 30_000},
       {:recv_timeout, 30_000}
     ]

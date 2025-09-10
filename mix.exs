@@ -142,6 +142,7 @@ defmodule HueMqtt.MixProject do
       {:httpoison, "~> 2.2"},
       {:pubsub, "~> 1.0"},
       {:toml, "~> 0.7"},
+      {:castore, "~> 1.0"},
       
       # Development and test dependencies
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
