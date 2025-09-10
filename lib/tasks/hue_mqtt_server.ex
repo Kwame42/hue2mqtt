@@ -30,16 +30,10 @@ defmodule Mix.Tasks.Hue.Mqtt.Server do
     Mix.Tasks.Run.run(run_args())
   end
 
-  @doc """
-  Checks if IEx (Interactive Elixir) is currently running.
-  """
   @spec iex_running?() :: boolean()
   defp iex_running?,
     do: Code.ensure_loaded?(IEx) and IEx.started?()
 
-  @doc """
-  Returns appropriate run arguments based on execution context.
-  """
   @spec run_args() :: [String.t()]
   defp run_args do
     if iex_running?(), do: [], else: ["--no-halt"]

@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Type specifications (@spec) for all public functions
 - Docker support with published image on Docker Hub
 - Calaos home automation integration
-- MIT License and proper package metadata for Hex.pm publishing
+- BSD 2-Clause License and proper package metadata for Hex.pm publishing
 
 ### Changed
 - **BREAKING**: Replaced emqtt (GitHub dependency) with Tortoise MQTT client from Hex.pm

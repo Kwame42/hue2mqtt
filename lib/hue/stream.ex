@@ -15,9 +15,6 @@ defmodule Hue.Stream do
     do: GenServer.start_link(__MODULE__, %{}, name: Hue.Stream)
 
   @doc """
-  
-  """
-  @doc """
   Initializes the Stream GenServer by establishing async HTTP connections 
   to all configured Hue bridges for real-time event streaming.
   

@@ -21,10 +21,6 @@ defmodule HueMqtt.Application do
   4. `Hue.Stream` - Real-time event streaming (must start after Hue.Conf)
   """
   
-  # See https://hexdocs.pm/elixir/Application.html
-  # for more information on OTP Applications
-  @moduledoc false
-
   use Application
 
   @doc """
@@ -44,7 +40,7 @@ defmodule HueMqtt.Application do
   def start(_type, _args) do
     children = [
 #      PubSub,
-      Mqtt,
+      #Mqtt,
       # Starts a worker by calling: HueMqtt.Worker.start_link(arg)
       # {HueMqtt.Worker, arg}
       ## WATCHOUT for dependensies betwee Hue.Api and Hue.Conf (

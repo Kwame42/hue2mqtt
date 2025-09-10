@@ -114,9 +114,6 @@ defmodule Hue.Api.Response do
     end
   end
   
-  @doc """
-  Gets response struct from API state by URL string.
-  """
   @spec get_response_from_uri!(map(), String.t()) :: %Response{}
   def get_response_from_uri!(api, url),
     do: get_response_from_uri!(api, URI.parse(url))

@@ -118,7 +118,7 @@ defmodule Mix.Tasks.Discovery.Calaos do
   defp get_resource_name(%{"name" => name}, _hue) when not is_nil(name),
     do: name
   
-  defp get_resource_name(%{"type" => "grouped_light", "owner" => %{"rid" => rid, "rtype" => rtype}} = attr, hue) do
+  defp get_resource_name(%{"type" => "grouped_light", "owner" => %{"rid" => rid, "rtype" => rtype}}, hue) do
     with rtype when rtype in @valid_resource <- rtype,
 	 rresource when not is_nil(rresource) <- hue |> Map.get(rtype) |> Enum.find(fn %{"id" => id} -> id == rid end),
 	 {:ok, metadata} <- Map.fetch(rresource, "metadata"),
@@ -127,11 +127,9 @@ defmodule Mix.Tasks.Discovery.Calaos do
     else
       _ -> "No name"
     end
-    |> IO.inspect(label: "grouped_light name")
   end
 
-  defp get_resource_name(attr, _) do
-#    IO.inspect(attr, label: "attr")
+  defp get_resource_name(_attr, _) do
     "name"
   end
 

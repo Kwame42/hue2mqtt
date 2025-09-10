@@ -46,18 +46,6 @@ defmodule Hue.Conf.Bridge do
     }
   end
 
-  @doc """
-  Converts a list of bridge attribute maps to Bridge structs.
-  
-  ## Parameters
-  
-  - `list` - List of maps containing bridge attributes
-  
-  ## Returns
-  
-  List of %Bridge{} structs.
-  """
-  @spec to_bridge_struct([map()]) :: [%Bridge{}]
   def to_bridge_struct(list) when is_list(list) do
     list
     |> maybe_to_map_keys()

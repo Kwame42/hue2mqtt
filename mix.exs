@@ -59,13 +59,16 @@ defmodule HueMqtt.MixProject do
     [
       name: "hue_mqtt",
       maintainers: ["Kwame"],
-      licenses: ["MIT"],
+      licenses: ["BSD-2-Clause"],
       links: %{
         "GitHub" => @source_url,
         "Documentation" => "https://hexdocs.pm/hue_mqtt",
         "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md",
         "Issues" => "#{@source_url}/issues",
-        "Docker Hub" => "https://hub.docker.com/r/kwame42/hue2mqtt"
+        "Docker Hub" => "https://hub.docker.com/r/kwame42/hue2mqtt",
+	"HUE api documentation" => "https://developers.meethue.com/develop/hue-api/",
+	"MQTT protocol" => "https://mqtt.org/",
+	"Calaos" => "https://www.calaos.fr/"
       },
       files: [
         "lib",

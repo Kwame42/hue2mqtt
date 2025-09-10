@@ -1,34 +1,29 @@
-defmodule Hue.Api.Resource do
-  @moduledoc """
-  Dynamic module generation for Hue API v2 resources.
-  
-  This module generates API client modules for all supported Hue resources based on 
-  the official Hue API v2 specification. It creates:
-  
-  - A master Resource module with utility functions
-  - Individual modules for each resource type (Light, Scene, Room, etc.)
-  - GET, POST, PUT, DELETE methods as appropriate for each resource
-  - Both base collection endpoints and individual resource endpoints
-  - Rate limiting options for specific resource types
-  
-  ## Generated Modules
-  
-  Each resource generates a module like `Hue.Api.Light` with methods:
-  - `get/1` - Get all resources of this type
-  - `get/2` - Get specific resource by ID
-  - `put/3` - Update specific resource
-  - `post/2` - Create new resource (where supported)
-  - `delete/2` - Delete resource (where supported)
-  
-  ## Reference
-  
-  See https://developers.meethue.com/develop/hue-api-v2/api-reference
-  """
-end
+##
+##  Dynamic module generation for Hue API v2 resources.
+##  
+##  This module generates API client modules for all supported Hue resources based on 
+##  the official Hue API v2 specification. It creates:
+##  
+##  - A master Resource module with utility functions
+##  - Individual modules for each resource type (Light, Scene, Room, etc.)
+##  - GET, POST, PUT, DELETE methods as appropriate for each resource
+##  - Both base collection endpoints and individual resource endpoints
+##  - Rate limiting options for specific resource types
+##  
+##  ## Generated Modules
+##  
+##  Each resource generates a module like `Hue.Api.Light` with methods:
+##  - `get/1` - Get all resources of this type
+##  - `get/2` - Get specific resource by ID
+##  - `put/3` - Update specific resource
+##  - `post/2` - Create new resource (where supported)
+##  - `delete/2` - Delete resource (where supported)
+##  
+##  ## Reference
+##  
+##  See https://developers.meethue.com/develop/hue-api-v2/api-reference
+## 
 
-##
-## see https://developers.meethue.com/develop/hue-api-v2/api-reference
-##
 resources_list  = [
   %{"light" => %{"base" => ["get"], "id" => ["put", "get"]}},
   %{"scene" => %{"base" => ["post", "get"], "id" => ["delete", "put", "get"]}},
@@ -78,7 +73,7 @@ resources_list_func =  quote do
   end
 end
 
-resource_toresource_to_module_name = quote do
+resource_to_module_name = quote do
   @doc """
   Converts a resource name to its corresponding module name.
   

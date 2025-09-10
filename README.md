@@ -3,7 +3,7 @@
 [![Hex.pm](https://img.shields.io/hexpm/v/hue_mqtt.svg)](https://hex.pm/packages/hue_mqtt)
 [![Documentation](https://img.shields.io/badge/docs-hexdocs-blue.svg)](https://hexdocs.pm/hue_mqtt)
 [![Docker](https://img.shields.io/docker/pulls/kwame42/hue2mqtt.svg)](https://hub.docker.com/r/kwame42/hue2mqtt)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: BSD-2-Clause](https://img.shields.io/badge/License-BSD_2--Clause-orange.svg)](https://opensource.org/licenses/BSD-2-Clause)
 [![GitHub stars](https://img.shields.io/github/stars/Kwame42/hue2mqtt.svg)](https://github.com/Kwame42/hue2mqtt/stargazers)
 
 V0.1b - Beta test mode
@@ -129,7 +129,7 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the BSD 2-Clause License - see the [LICENSE](LICENSE) file for details.
 
 ## Support
 

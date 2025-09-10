@@ -34,13 +34,6 @@ defmodule Hue.Api.Response.Timestamp do
     do: %Timestamp{updated_at: NaiveDateTime.utc_now()}
   
   @doc """
-  Creates a new timestamp, handling nil input.
-  """
-  @spec new(nil) :: %Timestamp{}
-  def new(nil),
-    do: %Timestamp{updated_at: NaiveDateTime.utc_now()}
-  
-  @doc """
   Creates a new timestamp with custom attributes.
   
   ## Parameters
@@ -51,6 +44,10 @@ defmodule Hue.Api.Response.Timestamp do
   
   %Timestamp{} struct with merged attributes.
   """
+  @spec new(nil) :: %Timestamp{}
+  def new(nil),
+    do: %Timestamp{updated_at: NaiveDateTime.utc_now()}
+  
   @spec new(keyword() | map()) :: %Timestamp{}
   def new(timestamps_attrs),
     do: Map.merge(%Timestamp{updated_at: NaiveDateTime.utc_now()}, Map.new(timestamps_attrs))
