@@ -15,16 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BSD 2-Clause License and proper package metadata for Hex.pm publishing
 
 ### Changed
+- **BREAKING**: Replaced HTTPoison with Req HTTP client for better performance and SSL handling
 - **BREAKING**: Replaced emqtt (GitHub dependency) with Tortoise MQTT client from Hex.pm
 - Improved error handling and retry logic
 - Enhanced MQTT topic parsing
 - Better configuration validation
 - MQTT configuration format updated for Tortoise compatibility
+- Event streaming now uses Task-based approach with Req instead of HTTPoison async messages
 
 ### Fixed
 - Rate limiting for Hue bridge API requests
-- SSL certificate handling for local bridges
+- SSL certificate handling for local bridges with self-signed certificates using Req
 - Package dependencies now compatible with Hex.pm publishing requirements
+- Improved connection resilience and automatic reconnection for event streams
 
 ## [0.1.0] - 2024-08-31
 

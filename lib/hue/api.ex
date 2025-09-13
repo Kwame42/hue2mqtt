@@ -1,16 +1,18 @@
 defmodule Hue.Api do
   @moduledoc """
-  HTTP API client for Philips Hue bridge communication with request throttling and retry logic.
+  HTTP API client for Philips Hue bridge communication using Req with request throttling and retry logic.
   
   This GenServer manages HTTP communication with Hue bridges, implementing:
   - Request rate limiting and retry mechanisms
   - Response caching and timestamp tracking
   - Support for GET, PUT, POST, DELETE operations
   - Automatic handling of 429 (Too Many Requests) responses
-  - SSL verification bypass for local bridge communication
+  - SSL verification bypass for local bridge communication using Req
   
   The module maintains connection state for multiple bridges and ensures
   API rate limits are respected through intelligent request throttling.
+  
+  Now uses Req instead of HTTPoison for better performance and cleaner SSL handling.
   """
   
   use GenServer
@@ -35,61 +37,75 @@ defmodule Hue.Api do
     do: {:ok, %Hue.Api{}}
   
   @impl true
-  def handle_call({:http, :get, url, headers, _data, options}, _from, api),
-    do: http_request(&HTTPoison.get/3, url, nil, headers, options, api)
-  
-  def handle_call({:http, :put, url, headers, data, options}, _from, api),
-    do: http_request(&HTTPoison.put/4, url, data, headers, options, api)
-  
-  def handle_call({:http, :post, url, headers, data, options}, _from, api),
-    do: http_request(&HTTPoison.post/4, url, data, headers, options, api)
-  
-  def handle_call({:http, :delete, url, headers, _data, options}, _from, api),
-    do: http_request(&HTTPoison.delete/3, url, nil, headers, options, api)
-  
-  defp http_request(http_method_func, url, data, headers, options, api) do
+  def handle_call({:http, method, url, headers, data, options}, _from, api) do
     uri = URI.parse(url)
     api = update_or_create_api(uri, api, Keyword.get(options, :timestamp))
     response =
       api
       |> Response.get_response_from_uri!(uri)
-      |> http_request_from_response(http_method_func, url, data, headers, @retries, options)
+      |> http_request_from_response(method, url, data, headers, @retries, options)
     
     new_api = add_response_to_bridges_list(response, api)
     {:reply, response, new_api}
   end
 
-  defp http_request_from_response(response, http_method_func, url, data, headers, num, options) do
+  defp http_request_from_response(response, method, url, data, headers, num, options) do
     response = Response.update_timestamp(response, Keyword.get(options, :timestamp))
     timestamp = Response.get_timestamp_from_response(response)
-    do_http_request(response, timestamp,  http_method_func, url, data, headers, num, options)
+    do_http_request(response, timestamp, method, url, data, headers, num, options)
   end
   
-  defp do_http_request(response, _timestamp, _http_method_func, _url, _data, _headers, 0, _options),
+  defp do_http_request(response, _timestamp, _method, _url, _data, _headers, 0, _options),
     do: response
   
-  defp do_http_request(response, _timestamp, http_method_func, url, data, headers, num, options) when not response.call? do
+  defp do_http_request(response, _timestamp, method, url, data, headers, num, options) when not response.call? do
     response
     |> Response.maybe_wait_and_update()
-    |> http_request_from_response(http_method_func, url, data, headers, num, options)
+    |> http_request_from_response(method, url, data, headers, num, options)
   end
   
-  defp do_http_request(response, timestamp, http_method_func, url, data, headers, num, options) when not timestamp.call? do
+  defp do_http_request(response, timestamp, method, url, data, headers, num, options) when not timestamp.call? do
     Timestamp.sleep(timestamp.interval)
-    http_request_from_response(response, http_method_func, url, data, headers, num, options)
+    http_request_from_response(response, method, url, data, headers, num, options)
   end
   
-  defp do_http_request(response, _timestamp, http_method_func, url, nil, headers, num, options) do
-    http_method_func.(url, headers, http_options()) 
-    |> set_api_response(response, http_method_func, url, nil, headers, num, options)
+  defp do_http_request(response, _timestamp, method, url, data, headers, num, options) do
+    make_req_request(method, url, data, headers)
+    |> set_api_response(response, method, url, data, headers, num, options)
   end
 
-  defp do_http_request(response, _timestamp, http_method_func, url, data, headers, num, options) do
-    http_method_func.(url, data, headers, http_options()) 
-    |> set_api_response(response, http_method_func, url, nil, headers, num, options)
+  # Make HTTP request using Req
+  defp make_req_request(method, url, data, headers) do
+    req_options = [
+      method: method,
+      url: url,
+      headers: headers,
+      connect_options: [
+        transport_opts: [
+          verify: :verify_none,
+          versions: [:"tlsv1.2", :"tlsv1.3"]
+        ]
+      ],
+      retry: false,  # We handle retries ourselves
+      receive_timeout: 30_000
+    ]
+    
+    req_options = if data, do: Keyword.put(req_options, :body, data), else: req_options
+    
+    try do
+      case Req.request(req_options) do
+        {:ok, %Req.Response{status: status, body: body, headers: response_headers}} ->
+          {:ok, %{status_code: status, body: body, headers: Map.to_list(response_headers)}}
+        {:error, reason} ->
+          {:error, reason}
+      end
+    rescue
+      exception ->
+        {:error, exception}
+    end
   end
 
-  defp set_api_response({:ok, %HTTPoison.Response{status_code: 200, body: body, headers: headers}}, response, _, _, _, _, _, _) do
+  defp set_api_response({:ok, %{status_code: 200, body: body, headers: headers}}, response, _, _, _, _, _, _) do
     attrs = %{
       count: response.count + 1,
       success?: true,
@@ -100,21 +116,23 @@ defmodule Hue.Api do
     Response.update_response(response, attrs)
   end
 
-  defp set_api_response({:ok, %HTTPoison.Response{status_code: 429, headers: headers}}, response, _, _, _, _, _, _) do
-    timeout = get_header(headers, "Retry-After")
-    warning("Error 429, must wait #{response.uri.host} #{timeout}")
+  defp set_api_response({:ok, %{status_code: 429, headers: headers}}, response, _, _, _, _, _, _) do
+    timeout = get_header(headers, "retry-after") || get_header(headers, "Retry-After") || "1"
+    timeout_int = String.to_integer(timeout)
+    warning("Error 429, must wait #{response.uri.host} #{timeout_int} seconds")
+    
     attrs = %{
       last_call: DateTime.utc_now(),
       success?: false,
       call?: false,
-      next_call: NaiveDateTime.add(NaiveDateTime.utc_now(), timeout, :seconds),
+      next_call: NaiveDateTime.add(NaiveDateTime.utc_now(), timeout_int, :seconds),
       error: :wait
     }
 
     Response.update_response(response, attrs)
   end
   
-  defp set_api_response({:ok, %HTTPoison.Response{status_code: code, headers: headers, body: body}}, response, _, _, _, _, _, _) do
+  defp set_api_response({:ok, %{status_code: code, headers: headers, body: body}}, response, _, _, _, _, _, _) do
     warning("Http request error host:#{response.uri.host} error_code:#{code} error_body:#{body |> build_body(headers) |> inspect()})")
     attrs = %{
       count: response.count + 1,
@@ -126,44 +144,48 @@ defmodule Hue.Api do
     Response.update_response(response, attrs)
   end
   
-  defp set_api_response(error, response, http_method_func, url, data, headers, num, options) do
-    warning("Http request error (#{num}/#{@retries}: #{inspect(error)})")
-    attrs =
-      %{
-	response: nil,
-	success?: false,
-	error: inspect(error)
-      }
+  defp set_api_response(error, response, method, url, data, headers, num, options) do
+    warning("Http request error (#{num}/#{@retries}): #{inspect(error)}")
+    attrs = %{
+      response: nil,
+      success?: false,
+      error: inspect(error)
+    }
 
     response
     |> Response.update_response(attrs)
-    |> http_request_from_response(http_method_func, url, data, headers, num - 1, options)
+    |> http_request_from_response(method, url, data, headers, num - 1, options)
   end
 
   defp build_body(nil, _headers),
     do: nil
     
-  defp build_body(body, headers) do
-    if Enum.find(headers, &(elem(&1, 0) == "Content-Type" && elem(&1, 1) |> String.split(";") |> List.first == "application/json")) do
-      json = Jason.decode!(body)
-      if is_list(json) do
-	json
-      else
-	data =
-	  case Map.get(json, "data") do
-	    nil -> Map.get(json, "errors")
-	    data -> data
-	  end
-	
-	case Enum.count(data) do
-	  1 -> List.first(data)
-	  _ -> data
-	end
+  defp build_body(body, headers) when is_binary(body) do
+    content_type = get_header(headers, "content-type") || get_header(headers, "Content-Type") || ""
+    
+    if String.contains?(content_type, "application/json") do
+      case Jason.decode(body) do
+        {:ok, json} when is_list(json) ->
+          json
+        {:ok, json} when is_map(json) ->
+          data = Map.get(json, "data") || Map.get(json, "errors")
+          case length_or_size(data) do
+            1 -> List.first(data) || data
+            _ -> data
+          end
+        {:error, _} ->
+          body
       end
     else
       body
     end
   end
+  
+  defp build_body(body, _headers), do: body
+
+  defp length_or_size(data) when is_list(data), do: length(data)
+  defp length_or_size(data) when is_map(data), do: map_size(data)
+  defp length_or_size(_), do: 0
 
   defp add_response_to_bridges_list(response, api),
     do: Map.put(api, :bridges, Map.put(api.bridges, response.uri.host, Map.put(response, :response, "")))
@@ -289,7 +311,7 @@ defmodule Hue.Api do
   """
   @spec delete_to_bridge(%Hue.Conf.Bridge{}, String.t(), any(), list(), keyword()) :: any()
   def delete_to_bridge(bridge, path, _data, headers \\ [], options \\ []),
-    do: method_data(:delete, bridge, path, headers, options)
+    do: method_data(:delete, bridge, path, nil, headers, options)
 
   @doc """
   Makes an HTTP request with data to a Hue bridge endpoint.
@@ -335,25 +357,20 @@ defmodule Hue.Api do
   def method_data!(method, bridge, path, data, headers, options) when method in [:put, :post, :delete] do
     case call(method, Bridge.url(bridge, path), Bridge.headers(bridge, headers), data, options) do
       nil -> raise "API error"
-      response -> Map.get(response.response, data)
+      response -> Map.get(response.response, "data")
+    end
+  end
+
+  defp get_header(headers, key) when is_list(headers) do
+    case Enum.find(headers, fn {k, _v} -> String.downcase(k) == String.downcase(key) end) do
+      {_key, val} -> val
+      nil -> nil
     end
   end
   
-  defp http_options do
-    [
-      {:ssl, [
-        {:verify, :verify_none},
-        {:versions, [:"tlsv1.2", :"tlsv1.3"]}
-      ]},
-      {:timeout, 30_000},
-      {:recv_timeout, 30_000}
-    ]
+  defp get_header(headers, key) when is_map(headers) do
+    Map.get(headers, key) || Map.get(headers, String.downcase(key))
   end
-
-  defp get_header(header, key) do
-    case Enum.find(header, &(elem(&1, 0) == key)) do
-      {_key, val} -> val
-      nil -> raise "can't find #{key}"
-    end
-  end
+  
+  defp get_header(_, _), do: nil
 end

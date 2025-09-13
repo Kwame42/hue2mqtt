@@ -139,8 +139,7 @@ defmodule HueMqtt.MixProject do
       # Production dependencies
       {:jason, "~> 1.4"},
       {:tortoise, "~> 0.10"},  # Pure Elixir MQTT client from Hex.pm
-      {:httpoison, "2.2.1"},
-      {:hackney, "1.17.0"},
+      {:req, "~> 0.4"},        # Modern HTTP client replacing HTTPoison
       {:pubsub, "~> 1.0"},
       {:toml, "~> 0.7"},
       {:castore, "~> 1.0"},
