@@ -172,7 +172,7 @@ defmodule Hue.Stream do
       # Build the request
       request = Finch.build(:get, url, headers)
       
-      # Stream the request with Finch
+      # Stream the request with Finch with infinity timeout
       Finch.stream(request, HueMqtt.Finch, nil, fn
         {:status, status}, acc ->
           info("Stream status for bridge #{bridge.ip}: #{status}")
@@ -190,7 +190,7 @@ defmodule Hue.Stream do
         {:error, reason}, acc ->
           send(parent_pid, {:stream_error, bridge.id, reason})
           {:halt, acc}
-      end)
+      end, receive_timeout: :infinity)
     rescue
       exception ->
         error("Exception in event stream for bridge #{bridge.ip}: #{inspect(exception)}")
