@@ -165,9 +165,6 @@ defmodule Hue.Stream do
     
     info("Starting event stream connection to #{url}")
     
-    # Parse the URL for Finch
-    uri = URI.parse(url)
-    
     try do
       # Build the request
       request = Finch.build(:get, url, headers)
@@ -178,7 +175,7 @@ defmodule Hue.Stream do
           info("Stream status for bridge #{bridge.ip}: #{status}")
           {:cont, acc}
         
-        {:headers, response_headers}, acc ->
+        {:headers, _response_headers}, acc ->
           info("Stream connected to bridge #{bridge.ip}")
           {:cont, acc}
         
