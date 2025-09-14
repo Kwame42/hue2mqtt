@@ -40,6 +40,19 @@ defmodule HueMqtt.Application do
   def start(_type, _args) do
     children = [
 #      PubSub,
+      # Finch HTTP client for streaming
+      {Finch, name: HueMqtt.Finch, pools: %{
+        default: [
+          size: 10,
+          count: 1,
+          conn_opts: [
+            transport_opts: [
+              verify: :verify_none,
+              versions: [:"tlsv1.2", :"tlsv1.3"]
+            ]
+          ]
+        ]
+      }},
 #      Mqtt,
       # Starts a worker by calling: HueMqtt.Worker.start_link(arg)
       # {HueMqtt.Worker, arg}

@@ -53,37 +53,44 @@ defmodule Hue.Stream do
   end
 
   # Handle streaming task messages
-  def handle_info({:stream_chunk, task_ref, chunk}, state) do
-    case Map.get(state.connections, task_ref) do
-      %{bridge: bridge} = conn_info ->
-	IO.inspect(chunk, label: "Received chunk from bridge #{bridge.ip}")
-        process_event_chunk(chunk, bridge)
-        new_connections = Map.put(state.connections, task_ref, %{conn_info | status: :connected})
-        {:noreply, %{state | connections: new_connections}}
-      nil ->
-        warning("Received chunk from unknown task: #{inspect(task_ref)}")
-        {:noreply, state}
+  def handle_info({:stream_chunk, bridge_id, chunk}, state) do
+    # Find the bridge by ID in connections
+    bridge = find_bridge_by_id(state.connections, bridge_id)
+    
+    if bridge do
+      IO.inspect(chunk, label: "Received chunk from bridge #{bridge.ip}")
+      process_event_chunk(chunk, bridge)
+      {:noreply, state}
+    else
+      warning("Received chunk from unknown bridge: #{bridge_id}")
+      {:noreply, state}
     end
   end
 
-  def handle_info({:stream_error, task_ref, error}, state) do
-    case Map.get(state.connections, task_ref) do
-      %{bridge: bridge} ->
-        error("Stream error for bridge #{bridge.ip}: #{inspect(error)}")
-        # Remove the failed connection and restart it
+  def handle_info({:stream_error, bridge_id, error}, state) do
+    bridge = find_bridge_by_id(state.connections, bridge_id)
+    
+    if bridge do
+      error("Stream error for bridge #{bridge.ip}: #{inspect(error)}")
+      # Find and remove the failed connection by bridge ID
+      {task_ref, _} = Enum.find(state.connections, fn {_ref, conn} -> 
+        conn.bridge.id == bridge_id 
+      end) || {nil, nil}
+      
+      if task_ref do
         new_connections = Map.delete(state.connections, task_ref)
-        
-        # Restart connection after a delay
         Process.send_after(self(), {:restart_connection, bridge}, 5_000)
-        
         {:noreply, %{state | connections: new_connections}}
-      nil ->
+      else
         {:noreply, state}
+      end
+    else
+      {:noreply, state}
     end
   end
 
   def handle_info({:restart_connection, bridge}, state) do
-    info("Restarting connection to bridge #{bridge.ip}")
+    info("Attempting to restart connection to bridge #{bridge.ip}")
     
     case start_streaming_connection(bridge) do
       {:ok, task_pid} ->
@@ -93,11 +100,12 @@ defmodule Hue.Stream do
           task_pid: task_pid, 
           status: :reconnecting
         })
+        info("Successfully restarted connection to bridge #{bridge.ip}")
         {:noreply, %{state | connections: new_connections}}
       {:error, reason} ->
         error("Failed to restart connection to bridge #{bridge.ip}: #{inspect(reason)}")
-        # Try again later
-        Process.send_after(self(), {:restart_connection, bridge}, 10_000)
+        # Try again later with exponential backoff
+        Process.send_after(self(), {:restart_connection, bridge}, 15_000)
         {:noreply, state}
     end
   end
@@ -106,15 +114,27 @@ defmodule Hue.Stream do
   def handle_info({:DOWN, task_ref, :process, _pid, reason}, state) do
     case Map.get(state.connections, task_ref) do
       %{bridge: bridge} ->
-        warning("Streaming task terminated for bridge #{bridge.ip}: #{inspect(reason)}")
-        new_connections = Map.delete(state.connections, task_ref)
-        
-        # Only restart if it wasn't a normal shutdown
-        if reason != :normal do
-          Process.send_after(self(), {:restart_connection, bridge}, 5_000)
+        case reason do
+          :normal ->
+            info("Streaming task completed normally for bridge #{bridge.ip}, restarting connection")
+            new_connections = Map.delete(state.connections, task_ref)
+            # Restart immediately for normal terminations (bridge closed connection)
+            Process.send_after(self(), {:restart_connection, bridge}, 1_000)
+            {:noreply, %{state | connections: new_connections}}
+          
+          :shutdown ->
+            info("Streaming task shutdown for bridge #{bridge.ip}, not restarting")
+            new_connections = Map.delete(state.connections, task_ref)
+            {:noreply, %{state | connections: new_connections}}
+          
+          other_reason ->
+            warning("Streaming task terminated for bridge #{bridge.ip}: #{inspect(other_reason)}")
+            new_connections = Map.delete(state.connections, task_ref)
+            # Restart with delay for error conditions
+            Process.send_after(self(), {:restart_connection, bridge}, 5_000)
+            {:noreply, %{state | connections: new_connections}}
         end
-        
-        {:noreply, %{state | connections: new_connections}}
+      
       nil ->
         {:noreply, state}
     end
@@ -128,7 +148,6 @@ defmodule Hue.Stream do
   # Start a streaming connection using Req with a Task
   defp start_streaming_connection(bridge) do
     parent_pid = self()
-    
     task_pid = Task.start_link(fn ->
       stream_events(bridge, parent_pid)
     end)
@@ -146,33 +165,37 @@ defmodule Hue.Stream do
     
     info("Starting event stream connection to #{url}")
     
-    task_ref = make_ref()
+    # Parse the URL for Finch
+    uri = URI.parse(url)
     
     try do
-      Req.get!(url,
-        headers: headers,
-        connect_options: [
-          transport_opts: [
-            verify: :verify_none,
-            versions: [:"tlsv1.2", :"tlsv1.3"]
-          ]
-        ],
-        receive_timeout: :infinity,
-        into: fn
-          {:data, data}, {req, resp, acc} ->
-            # Send chunk to parent GenServer
-            send(parent_pid, {:stream_chunk, task_ref, data})
-            {:cont, {req, resp, acc}}
-          
-          {:error, reason}, {req, resp, acc} ->
-            send(parent_pid, {:stream_error, task_ref, reason})
-            {:halt, {req, resp, acc}}
-        end
-      )
+      # Build the request
+      request = Finch.build(:get, url, headers)
+      
+      # Stream the request with Finch
+      Finch.stream(request, HueMqtt.Finch, nil, fn
+        {:status, status}, acc ->
+          info("Stream status for bridge #{bridge.ip}: #{status}")
+          {:cont, acc}
+        
+        {:headers, response_headers}, acc ->
+          info("Stream connected to bridge #{bridge.ip}")
+          {:cont, acc}
+        
+        {:data, data}, acc ->
+          # Send chunk with bridge ID instead of task_ref
+          send(parent_pid, {:stream_chunk, bridge.id, data})
+          {:cont, acc}
+        
+        {:error, reason}, acc ->
+          send(parent_pid, {:stream_error, bridge.id, reason})
+          {:halt, acc}
+      end)
     rescue
       exception ->
         error("Exception in event stream for bridge #{bridge.ip}: #{inspect(exception)}")
-        send(parent_pid, {:stream_error, task_ref, exception})
+        error("Exception details: #{Exception.format(:error, exception, __STACKTRACE__)}")
+        send(parent_pid, {:stream_error, bridge.id, exception})
     end
   end
 
@@ -253,4 +276,12 @@ defmodule Hue.Stream do
   @spec ref_to_string(reference()) :: String.t()
   def ref_to_string(ref),
     do: inspect(ref)
+
+  # Helper function to find bridge by ID in connections
+  defp find_bridge_by_id(connections, bridge_id) do
+    connections
+    |> Enum.find_value(fn {_ref, %{bridge: bridge}} ->
+      if bridge.id == bridge_id, do: bridge, else: nil
+    end)
+  end
 end

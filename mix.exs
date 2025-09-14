@@ -140,6 +140,7 @@ defmodule HueMqtt.MixProject do
       {:jason, "~> 1.4"},
       {:tortoise, "~> 0.10"},  # Pure Elixir MQTT client from Hex.pm
       {:req, "~> 0.4"},        # Modern HTTP client replacing HTTPoison
+      {:finch, "~> 0.16"},     # Lower level HTTP client for streaming
       {:pubsub, "~> 1.0"},
       {:toml, "~> 0.7"},
       {:castore, "~> 1.0"},
