@@ -1,6 +1,6 @@
 defmodule Mqtt do
   @moduledoc """
-  MQTT client using Tortoise that manages bidirectional communication between MQTT broker and Hue bridges.
+  MQTT GenServer that manages Tortoise connection and handles bidirectional communication between MQTT broker and Hue bridges.
   
   This module handles:
   - MQTT broker connection and subscription management using Tortoise
@@ -8,13 +8,10 @@ defmodule Mqtt do
   - Message routing between MQTT and Hue API
   - Configuration loading from various sources (TOML, JSON, environment)
   
-  The module subscribes to 'hue2mqtt/#' topics and processes incoming messages,
-  forwarding appropriate commands to the Hue bridge via the Hue.Api module.
-  
-  Uses Tortoise MQTT client which integrates well with OTP supervision trees.
+  The module manages a Tortoise connection and implements both GenServer and Tortoise.Handler behaviors.
   """
 
-  use Tortoise.Handler
+  use GenServer
   use Log
   alias Hue.Api.Resource
 
@@ -26,20 +23,48 @@ defmodule Mqtt do
     module: "",
     method: "get",
     error: [],
-    valid?: true
+    valid?: true,
+    connection_pid: nil
   ]
 
   @doc """
-  Starts the Tortoise MQTT client with this module as the handler.
+  Starts the MQTT GenServer which manages the Tortoise connection.
   """
   @spec start_link(any()) :: GenServer.on_start()
   def start_link(_) do
-    info("MQTT connection setup")
-    config = load_config()
+    GenServer.start_link(__MODULE__, [], name: __MODULE__)
+  end
+
+  @impl true
+  def init([]) do
+    info("MQTT GenServer starting")
     
+    case load_config() do
+      config when is_list(config) ->
+        info("MQTT config loaded: #{inspect(config)}")
+        case start_tortoise_connection(config) do
+          {:ok, connection_pid} ->
+            info("Tortoise MQTT connection started successfully")
+            {:ok, %{connection_pid: connection_pid, config: config}}
+          {:error, reason} ->
+            error("Failed to start Tortoise connection: #{inspect(reason)}")
+            {:stop, reason}
+        end
+        
+      {:error, reason} ->
+        error("Failed to load MQTT config: #{inspect(reason)}")
+        {:stop, reason}
+        
+      nil ->
+        error("MQTT configuration is nil")
+        {:stop, :no_config}
+    end
+  end
+  
+  defp start_tortoise_connection(config) do
     Tortoise.Connection.start_link([
       client_id: config[:client_id] || "hue2mqtt",
-      handler: {__MODULE__, []},
+      handler: {Mqtt.Handler, []},
       server: {Tortoise.Transport.Tcp, [host: config[:host], port: config[:port] || 1883]},
       subscriptions: [{"hue2mqtt/#", 1}],
       user_name: config[:username],
@@ -53,62 +78,6 @@ defmodule Mqtt do
       }
     ])
   end
-
-  # Tortoise.Handler callbacks
-
-  @doc """
-  Called when the MQTT connection is established.
-  """
-  @impl Tortoise.Handler
-  def init(args) do
-    info("MQTT connection established")
-    {:ok, args}
-  end
-
-  @doc """
-  Called when the connection to the MQTT broker is established.
-  """
-  @impl Tortoise.Handler
-  def connection(status, state) do
-    info("MQTT connection status: #{inspect(status)}")
-    
-    case status do
-      :up ->
-        # Publish online status when connected
-        Tortoise.publish("hue2mqtt", "hue2mqtt/status", "online", qos: 1, retain: true)
-      :down ->
-        warning("MQTT connection lost")
-    end
-    
-    {:ok, state}
-  end
-
-  @doc """
-  Called when a message is received on a subscribed topic.
-  """
-  @impl Tortoise.Handler
-  def handle_message(topic, payload, state) do
-    info("Received MQTT message on topic: #{topic}")
-    
-    topic
-    |> topic_to_hue()
-    |> hue_bridge(payload)
-    
-    {:ok, state}
-  end
-
-  @doc """
-  Called when the handler is being terminated.
-  """
-  @impl Tortoise.Handler
-  def terminate(reason, _state) do
-    info("MQTT handler terminating: #{inspect(reason)}")
-    # Publish offline status when terminating
-    Tortoise.publish("hue2mqtt", "hue2mqtt/status", "offline", qos: 1, retain: true)
-    :ok
-  end
-
-  # Public API
 
   @doc """
   Publishes a message to the MQTT broker under the hue2mqtt topic prefix.
@@ -133,74 +102,6 @@ defmodule Mqtt do
     Tortoise.publish("hue2mqtt", full_topic, encoded_payload, qos: 0)
   end
 
-  # Private functions (keeping your existing logic)
-
-  defp hue_bridge(%Mqtt{} = hue, _payload) when hue.valid? == false,
-    do: error("Mqtt HUE error [#{hue.bridge_id}, #{hue.module}, #{hue.method}]: #{hue.error |> Enum.intersperse("\n") |> List.to_string()}")
-
-  defp hue_bridge(%Mqtt{method: :set} = hue, payload) do
-    with {:ok, encoded_payload} <- Jason.decode(payload) do
-      info("Set HUE bridge ressource: [#{hue.bridge.ip}/#{hue.module}/#{hue.resource_id}] (#{hue.module}) with payload #{inspect payload}")
-      apply(:"Elixir.Hue.Api.#{hue.module}", :put, [hue.bridge, hue.resource_id, encoded_payload])
-      |> info()
-    else
-      _ -> error("Payload: #{inspect(payload)} invalid, must be JSON type")
-    end
-  end
-
-  defp hue_bridge(%Mqtt{} = hue, _payload) do
-    info("MQTT HUE info [#{hue.module}, #{hue.resource_id}]") 
-  end
-  
-  defp hue_bridge(data, _) do
-    info("I don't handle this... #{inspect(data)}")
-  end
-
-  defp load_config do
-    cond do
-      not is_nil(Application.get_env(:hue_mqtt, :config_file)) ->
-        info("Try to load conf from config map - see toml")
-        Application.get_env(:hue_mqtt, :config_file)
-	|> Hue.Conf.config_file_to_config_map()
-        |> config_map_to_conf()
-	  
-      not is_nil(Application.get_env(:hue_mqtt, :emqtt)) ->
-	info("loading configuration from config.ex")
-	Application.get_env(:hue_mqtt, :emqtt)
-	
-      File.exists?(Application.get_env(:hue_mqtt, :mqtt_config, "")) ->
-	info("Try to load conf from file")
-	Hue.Conf.read_conf(Application.get_env(:hue_mqtt, :mqtt_config))
-        |> mqtt_list_to_config()
-        
-      true -> raise "no mqtt configuration available, add a config file"
-    end
-  end
-
-  defp config_map_to_conf(config_map) do
-    conf =
-      config_map
-      |> Map.get("mqtt")
-      |> to_keyword()
-    
-    [port: 1883, client_id: "hue2mqtt", keep_alive: 60]
-    |> Keyword.merge(conf)
-  end
-
-  defp mqtt_list_to_config(mqtt_config) when is_list(mqtt_config) do
-    Enum.into(mqtt_config, %{})
-    |> to_keyword()
-  end
-  
-  defp mqtt_list_to_config(mqtt_config), do: mqtt_config
-  
-  defp to_keyword(map) when is_map(map) do
-    Enum.reduce(map, [], fn {key, val}, list ->
-      atom_key = if is_atom(key), do: key, else: String.to_atom(key)
-      Keyword.put(list, atom_key, val)
-    end)
-  end
-
   @methods_list ["get", "set"]
   
   @doc """
@@ -222,15 +123,20 @@ defmodule Mqtt do
   Returns a %Mqtt{} struct containing parsed bridge, resource, and method information.
   """
   @spec topic_to_hue(String.t()) :: %Mqtt{}
-  def topic_to_hue(topic) do
-    case String.split(topic, "/") do
-      ["hue2mqtt", resource, resource_id] -> cast_to_hue_struct(%{bridge_id: :default, resource: resource, resource_id: resource_id})
-      ["hue2mqtt", resource, resource_id, method] when method in @methods_list-> cast_to_hue_struct(%{bridge_id: :default, resource: resource, method: method, resource_id: resource_id})
-      ["hue2mqtt", bridge_id, resource, resource_id] -> cast_to_hue_struct(%{bridge_id: bridge_id, resource: resource, resource_id: resource_id})
-      ["hue2mqtt", bridge_id, resource, resource_id, method] when method in @methods_list -> cast_to_hue_struct(%{bridge_id: bridge_id, resource: resource, method: method, resource_id: resource_id})
-      _ -> info("Unknown topic format: #{topic}")
-    end
-  end
+  def topic_to_hue(["hue2mqtt", resource, resource_id]),
+    do: cast_to_hue_struct(%{bridge_id: :default, resource: resource, resource_id: resource_id})
+    
+  def topic_to_hue(["hue2mqtt", resource, resource_id, method]) when method in @methods_list,
+    do: cast_to_hue_struct(%{bridge_id: :default, resource: resource, method: method, resource_id: resource_id})
+
+  def topic_to_hue(["hue2mqtt", bridge_id, resource, resource_id]),
+    do: cast_to_hue_struct(%{bridge_id: bridge_id, resource: resource, resource_id: resource_id})
+    
+  def topic_to_hue(["hue2mqtt", bridge_id, resource, resource_id, method]) when method in @methods_list,
+    do: cast_to_hue_struct(%{bridge_id: bridge_id, resource: resource, method: method, resource_id: resource_id})
+    
+  def topic_to_hue(topic),
+    do: info("Unknown topic format: #{topic}")
   
   defp cast_to_hue_struct(attrs) do
     %Mqtt{}
@@ -291,4 +197,152 @@ defmodule Mqtt do
   defp maybe_to_atom(data) when is_atom(data), do: data
   defp maybe_to_atom(data) when is_bitstring(data), do: String.to_atom(data)
   defp maybe_to_atom(data), do: raise "Unknown type for #{inspect(data)}"
+
+  # Private functions for Hue bridge communication
+  defp hue_bridge(%Mqtt{} = hue, _payload) when hue.valid? == false,
+    do: error("Mqtt HUE error [#{hue.bridge_id}, #{hue.module}, #{hue.method}]: #{hue.error |> Enum.intersperse("\n") |> List.to_string()}")
+
+  defp hue_bridge(%Mqtt{method: :set} = hue, payload) do
+    with {:ok, encoded_payload} <- Jason.decode(payload) do
+      info("Set HUE bridge ressource: [#{hue.bridge.ip}/#{hue.module}/#{hue.resource_id}] (#{hue.module}) with payload #{inspect payload}")
+      apply(:"Elixir.Hue.Api.#{hue.module}", :put, [hue.bridge, hue.resource_id, encoded_payload])
+      |> info()
+    else
+      _ -> error("Payload: #{inspect(payload)} invalid, must be JSON type")
+    end
+  end
+
+  defp hue_bridge(%Mqtt{} = hue, _payload) do
+    info("MQTT HUE info [#{hue.module}, #{hue.resource_id}]") 
+  end
+  
+  defp hue_bridge(data, _) do
+    info("I don't handle this... #{inspect(data)}")
+  end
+
+  defp load_config do
+    try do
+      cond do
+        not is_nil(Application.get_env(:hue_mqtt, :config_file)) ->
+          info("Try to load conf from config map - see toml")
+          Application.get_env(:hue_mqtt, :config_file)
+          |> Hue.Conf.config_file_to_config_map()
+          |> config_map_to_conf()
+          
+        not is_nil(Application.get_env(:hue_mqtt, :emqtt)) ->
+          info("loading configuration from config.ex")
+          Application.get_env(:hue_mqtt, :emqtt)
+          
+        File.exists?(Application.get_env(:hue_mqtt, :mqtt_config, "")) ->
+          info("Try to load conf from file")
+          Hue.Conf.read_conf(Application.get_env(:hue_mqtt, :mqtt_config))
+          |> mqtt_list_to_config()
+          
+        true -> 
+          warning("No MQTT configuration found, using defaults")
+          [host: "localhost", port: 1883, client_id: "hue2mqtt", keep_alive: 60]
+      end
+    rescue
+      exception ->
+        error("Exception loading MQTT config: #{inspect(exception)}")
+        {:error, exception}
+    end
+  end
+
+  defp config_map_to_conf(config_map) do
+    conf =
+      config_map
+      |> Map.get("mqtt")
+      |> to_keyword()
+    
+    [port: 1883, client_id: "hue2mqtt", keep_alive: 60]
+    |> Keyword.merge(conf)
+  end
+
+  defp mqtt_list_to_config(mqtt_config) when is_list(mqtt_config) do
+    Enum.into(mqtt_config, %{})
+    |> to_keyword()
+  end
+  
+  defp mqtt_list_to_config(mqtt_config), do: mqtt_config
+  
+  defp to_keyword(map) when is_map(map) do
+    Enum.reduce(map, [], fn {key, val}, list ->
+      atom_key = if is_atom(key), do: key, else: String.to_atom(key)
+      Keyword.put(list, atom_key, val)
+    end)
+  end
+end
+
+# Separate module for Tortoise message handling
+defmodule Mqtt.Handler do
+  @moduledoc """
+  Tortoise.Handler implementation for processing MQTT messages.
+  """
+  
+  use Tortoise.Handler
+  use Log
+
+  @impl Tortoise.Handler
+  def init(args) do
+    info("MQTT handler initialized")
+    {:ok, args}
+  end
+
+  @impl Tortoise.Handler
+  def connection(status, state) do
+    info("MQTT connection status: #{inspect(status)}")
+    
+    case status do
+      :up ->
+        # Publish online status when connected
+        Tortoise.publish("hue2mqtt", "hue2mqtt/status", "online", qos: 1, retain: true)
+      :down ->
+        warning("MQTT connection lost")
+    end
+    
+    {:ok, state}
+  end
+
+  @impl Tortoise.Handler
+  def handle_message(topic, payload, state) do
+    IO.inspect(topic, label: "TOPIC")
+    info("Received MQTT message on topic: #{topic}")
+    
+    topic
+    |> Mqtt.topic_to_hue()
+    |> hue_bridge(payload)
+    
+    {:ok, state}
+  end
+
+  @impl Tortoise.Handler
+  def terminate(reason, _state) do
+    info("MQTT handler terminating: #{inspect(reason)}")
+    # Publish offline status when terminating
+    Tortoise.publish("hue2mqtt", "hue2mqtt/status", "offline", qos: 1, retain: true)
+    :ok
+  end
+
+  # Private function to handle Hue bridge communication
+  defp hue_bridge(%Mqtt{} = hue, _payload) when hue.valid? == false,
+    do: error("Mqtt HUE error [#{hue.bridge_id}, #{hue.module}, #{hue.method}]: #{hue.error |> Enum.intersperse("\n") |> List.to_string()}")
+
+  defp hue_bridge(%Mqtt{method: :set} = hue, payload) do
+    with {:ok, encoded_payload} <- Jason.decode(payload) do
+      info("Set HUE bridge resource: [#{hue.bridge.ip}/#{hue.module}/#{hue.resource_id}] (#{hue.module}) with payload #{inspect payload}")
+      apply(:"Elixir.Hue.Api.#{hue.module}", :put, [hue.bridge, hue.resource_id, encoded_payload])
+      |> info()
+    else
+      _ -> error("Payload: #{inspect(payload)} invalid, must be JSON type")
+    end
+  end
+
+  defp hue_bridge(%Mqtt{} = hue, _payload) do
+    info("MQTT HUE info [#{hue.module}, #{hue.resource_id}]") 
+  end
+  
+  defp hue_bridge(data, _) do
+    info("I don't handle this... #{inspect(data)}")
+  end
 end
