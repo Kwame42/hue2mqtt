@@ -58,3 +58,7 @@ npm-debug.log
 
 # OS files
 Thumbs.db
+doc
+hue2mqtt.en.html
+hue2mqtt.en.md
+*.xml

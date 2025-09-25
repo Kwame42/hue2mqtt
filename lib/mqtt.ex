@@ -19,6 +19,7 @@ defmodule Mqtt do
     base: "hue2mqtt",
     bridge_id: :default,
     bridge: "",
+    resource: "",
     resource_id: "",
     module: "",
     method: "get",
@@ -173,6 +174,7 @@ defmodule Mqtt do
       |> Map.put(:module, attrs.resource)
       |> add_error_to_hue_struct("Unkown resource, check API documentation for available resource list")
     end
+    |> Map.put(:resource, attrs.resource)
   end
 
   @doc """
@@ -197,28 +199,6 @@ defmodule Mqtt do
   defp maybe_to_atom(data) when is_atom(data), do: data
   defp maybe_to_atom(data) when is_bitstring(data), do: String.to_atom(data)
   defp maybe_to_atom(data), do: raise "Unknown type for #{inspect(data)}"
-
-  # Private functions for Hue bridge communication
-  defp hue_bridge(%Mqtt{} = hue, _payload) when hue.valid? == false,
-    do: error("Mqtt HUE error [#{hue.bridge_id}, #{hue.module}, #{hue.method}]: #{hue.error |> Enum.intersperse("\n") |> List.to_string()}")
-
-  defp hue_bridge(%Mqtt{method: :set} = hue, payload) do
-    with {:ok, encoded_payload} <- Jason.decode(payload) do
-      info("Set HUE bridge ressource: [#{hue.bridge.ip}/#{hue.module}/#{hue.resource_id}] (#{hue.module}) with payload #{inspect payload}")
-      apply(:"Elixir.Hue.Api.#{hue.module}", :put, [hue.bridge, hue.resource_id, encoded_payload])
-      |> info()
-    else
-      _ -> error("Payload: #{inspect(payload)} invalid, must be JSON type")
-    end
-  end
-
-  defp hue_bridge(%Mqtt{} = hue, _payload) do
-    info("MQTT HUE info [#{hue.module}, #{hue.resource_id}]") 
-  end
-  
-  defp hue_bridge(data, _) do
-    info("I don't handle this... #{inspect(data)}")
-  end
 
   defp load_config do
     try do
@@ -271,78 +251,5 @@ defmodule Mqtt do
       atom_key = if is_atom(key), do: key, else: String.to_atom(key)
       Keyword.put(list, atom_key, val)
     end)
-  end
-end
-
-# Separate module for Tortoise message handling
-defmodule Mqtt.Handler do
-  @moduledoc """
-  Tortoise.Handler implementation for processing MQTT messages.
-  """
-  
-  use Tortoise.Handler
-  use Log
-
-  @impl Tortoise.Handler
-  def init(args) do
-    info("MQTT handler initialized")
-    {:ok, args}
-  end
-
-  @impl Tortoise.Handler
-  def connection(status, state) do
-    info("MQTT connection status: #{inspect(status)}")
-    
-    case status do
-      :up ->
-        # Publish online status when connected
-        Tortoise.publish("hue2mqtt", "hue2mqtt/status", "online", qos: 1, retain: true)
-      :down ->
-        warning("MQTT connection lost")
-    end
-    
-    {:ok, state}
-  end
-
-  @impl Tortoise.Handler
-  def handle_message(topic, payload, state) do
-    IO.inspect(topic, label: "TOPIC")
-    info("Received MQTT message on topic: #{topic}")
-    
-    topic
-    |> Mqtt.topic_to_hue()
-    |> hue_bridge(payload)
-    
-    {:ok, state}
-  end
-
-  @impl Tortoise.Handler
-  def terminate(reason, _state) do
-    info("MQTT handler terminating: #{inspect(reason)}")
-    # Publish offline status when terminating
-    Tortoise.publish("hue2mqtt", "hue2mqtt/status", "offline", qos: 1, retain: true)
-    :ok
-  end
-
-  # Private function to handle Hue bridge communication
-  defp hue_bridge(%Mqtt{} = hue, _payload) when hue.valid? == false,
-    do: error("Mqtt HUE error [#{hue.bridge_id}, #{hue.module}, #{hue.method}]: #{hue.error |> Enum.intersperse("\n") |> List.to_string()}")
-
-  defp hue_bridge(%Mqtt{method: :set} = hue, payload) do
-    with {:ok, encoded_payload} <- Jason.decode(payload) do
-      info("Set HUE bridge resource: [#{hue.bridge.ip}/#{hue.module}/#{hue.resource_id}] (#{hue.module}) with payload #{inspect payload}")
-      apply(:"Elixir.Hue.Api.#{hue.module}", :put, [hue.bridge, hue.resource_id, encoded_payload])
-      |> info()
-    else
-      _ -> error("Payload: #{inspect(payload)} invalid, must be JSON type")
-    end
-  end
-
-  defp hue_bridge(%Mqtt{} = hue, _payload) do
-    info("MQTT HUE info [#{hue.module}, #{hue.resource_id}]") 
-  end
-  
-  defp hue_bridge(data, _) do
-    info("I don't handle this... #{inspect(data)}")
   end
 end
