@@ -280,7 +280,7 @@ defmodule Mix.Tasks.Discovery.Calaos do
       end
     
     ~s"""
-    <calaos:output data='#{assigns.data}' enabled="true" gui_type="light" id="#{assigns.calaos_id}" io_type="output" log_history="true" logged="true" name="#{assigns.name}" #{values} #{path} topic_pub="#{assigns.topic_pub}" topic_sub="#{assigns.topic_sub}" type="#{assigns.type}" visible="true" />
+    <calaos:output data='#{assigns.data}' enabled="true" gui_type="light" id="output_#{assigns.calaos_id}" io_type="output" log_history="true" logged="true" name="#{assigns.name}" #{values} #{path} topic_pub="#{assigns.topic_pub}" topic_sub="#{assigns.topic_sub}" type="#{assigns.type}" visible="true" />
     """
   end
 end
