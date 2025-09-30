@@ -67,14 +67,17 @@ defmodule Mqtt do
       client_id: config[:client_id] || "hue2mqtt",
       handler: {Mqtt.Handler, []},
       server: {Tortoise.Transport.Tcp, [host: config[:host], port: config[:port] || 1883]},
-      subscriptions: [{"hue2mqtt/#", 1}],
+      subscriptions: [
+        {"hue2mqtt/+/+/set", 1},  # Subscribe to: hue2mqtt/{resource}/{id}/set
+        {"hue2mqtt/+/+/+/set", 1} # Subscribe to: hue2mqtt/{bridge}/{resource}/{id}/set
+      ],
       user_name: config[:username],
       password: config[:password],
       keep_alive: config[:keep_alive] || 60,
       will: %Tortoise.Package.Publish{
         topic: "hue2mqtt/status",
         payload: "offline",
-        qos: 1,
+        qos: 0,  # Changed from 1 to 0 to avoid acknowledgment issues
         retain: true
       }
     ])
@@ -136,8 +139,10 @@ defmodule Mqtt do
   def topic_to_hue(["hue2mqtt", bridge_id, resource, resource_id, method]) when method in @methods_list,
     do: cast_to_hue_struct(%{bridge_id: bridge_id, resource: resource, method: method, resource_id: resource_id})
     
-  def topic_to_hue(topic),
-    do: info("Unknown topic format: #{topic}")
+  def topic_to_hue(topic) do
+    warning("Unknown topic format: #{inspect(topic)}")
+    %Mqtt{valid?: false, error: ["Unknown topic format: #{inspect(topic)}"]}
+  end
   
   defp cast_to_hue_struct(attrs) do
     %Mqtt{}
