@@ -56,26 +56,48 @@ defmodule Mix.Tasks.Discovery.Calaos do
   def run(args) do
     Application.ensure_all_started(:httpoison)
     options = Conf.application_load_config_in_env(args)
-    if File.exists?("./example.json") do
-      warning("========= APPLICATION START IN EXAMPLE MODE =========")
-      "./example.json"
-      |> File.read!()
-      |> Jason.decode!()
-    else	
-      Application.ensure_all_started(:hue_mqtt)
-      discover_hue()
-    end
+    Application.ensure_all_started(:hue_mqtt)
+    discover_hue(options)
     |> convert_to_calaos(options)
   end
   
-  defp discover_hue do
+  defp discover_hue(options) do
     @valid_resource
     |> Enum.reduce(%{}, fn module_name, acc ->
       value = apply(:"Elixir.Hue.Api.#{Hue.Api.Resource.resource_to_module_name(module_name)}", :get, [Hue.Conf.get_bridge()])
       Map.put(acc, module_name, Map.get(value, :response))
     end)
+    |> maybe_out_lights(options)
+    |> maybe_out_zone_and_room(options)
   end
 
+  defp maybe_out_lights(hue, options) do
+    case Keyword.fetch(options, :hue_lights) do
+      {:ok, filename} when is_bitstring(filename) ->
+	File.write!(filename, Jason.encode!(hue, pretty: true))
+	hue
+	
+      :error -> hue
+    end
+  end
+
+  defp maybe_out_zone_and_room(hue, options) do
+    case Keyword.fetch(options, :hue_zones_and_rooms) do
+      {:ok, filename} when is_bitstring(filename) ->
+	data = ["zone", "room"]
+	|> Enum.reduce(%{}, fn module_name, acc ->
+	  value = apply(:"Elixir.Hue.Api.#{Hue.Api.Resource.resource_to_module_name(module_name)}", :get, [Hue.Conf.get_bridge()])
+	  Map.put(acc, module_name, Map.get(value, :response))
+	end) 
+
+	File.write!(filename, Jason.encode!(data, pretty: true))
+	hue
+	
+      :error -> hue
+    end
+  end
+	
+  
   def convert_to_calaos(hue, options) do
     filename = get_filename(options)
     start = Keyword.get(options, :id_start, 0)
